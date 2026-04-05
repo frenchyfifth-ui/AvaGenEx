@@ -1,0 +1,5 @@
+{
+  "name": "Avatar Expression Generator",
+  "description": "Upload a reference character and automatically generate a consistent set of predefined facial expressions using AI image editing.",
+  "requestFramePermissions": []
+}
