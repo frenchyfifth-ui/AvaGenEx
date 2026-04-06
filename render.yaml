@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: avagenex
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: NODE_ENV=production npx tsx server/index.ts
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: true
