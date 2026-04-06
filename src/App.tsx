@@ -118,17 +118,37 @@ const apiRequest = async <T,>(endpoint: string, body: object): Promise<T> => {
   return response.json() as Promise<T>;
 };
 
+// Usage tracking
+interface UsageInfo {
+  dailyImages: { used: number; limit: number };
+  dailyPrompts: { used: number; limit: number };
+  sessionLimit: number;
+  resetsAt: string;
+}
+
+const fetchUsage = async (): Promise<UsageInfo> => {
+  try {
+    const response = await fetch('/api/usage');
+    if (response.ok) return response.json();
+  } catch {
+    // Silently fail
+  }
+  return { dailyImages: { used: 0, limit: 10 }, dailyPrompts: { used: 0, limit: 50 }, sessionLimit: 5, resetsAt: '' };
+};
+
 const optimizeSinglePrompt = async (
   name: string,
   currentIntensity: Intensity,
   currentScope: GenerationScope,
-  customInstructions: string
+  customInstructions: string,
+  useTemplateOnly: boolean
 ): Promise<string> => {
   const result = await apiRequest<OptimizePromptResponse>('/optimize-prompt', {
     name: sanitizeInput(name),
     intensity: currentIntensity,
     scope: currentScope,
     customInstructions: sanitizeInput(customInstructions),
+    skipAI: useTemplateOnly,
   });
   return result.prompt;
 };
@@ -137,7 +157,8 @@ const optimizeBatchPrompts = async (
   expressions: string[],
   currentIntensity: Intensity,
   currentScope: GenerationScope,
-  customInstructions: string
+  customInstructions: string,
+  useTemplateOnly: boolean
 ): Promise<Record<string, string>> => {
   const sanitizedExpressions = expressions.map(sanitizeInput);
   const result = await apiRequest<OptimizeBatchPromptsResponse>('/optimize-batch-prompts', {
@@ -145,6 +166,7 @@ const optimizeBatchPrompts = async (
     intensity: currentIntensity,
     scope: currentScope,
     customInstructions: sanitizeInput(customInstructions),
+    skipAI: useTemplateOnly,
   });
   return result.prompts;
 };
@@ -171,8 +193,17 @@ export default function App() {
   const [intensity, setIntensity] = useState<Intensity>('normal');
   const [scope, setScope] = useState<GenerationScope>('face_only');
   const [customPrompt, setCustomPrompt] = useState('');
+  const [useTemplatePrompts, setUseTemplatePrompts] = useState(true); // Default: free mode
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
 
   const refInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch usage info on mount and periodically
+  useEffect(() => {
+    fetchUsage().then(setUsage);
+    const interval = setInterval(() => fetchUsage().then(setUsage), 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleReferenceUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -258,9 +289,9 @@ export default function App() {
   };
 
   const generateSingleExpression = async (id: string, name: string, refImage: string, currentIntensity: Intensity, currentScope: GenerationScope, customInstructions: string) => {
-    setExpressions(prev => prev.map(exp => exp.id === id ? { ...exp, status: 'generating', progressMessage: 'Optimizing prompt...', errorMessage: undefined } : exp));
+    setExpressions(prev => prev.map(exp => exp.id === id ? { ...exp, status: 'generating', progressMessage: 'Preparing prompt...', errorMessage: undefined } : exp));
     try {
-      const optimizedPrompt = await generateWithRetry(() => optimizeSinglePrompt(name, currentIntensity, currentScope, customInstructions));
+      const optimizedPrompt = await generateWithRetry(() => optimizeSinglePrompt(name, currentIntensity, currentScope, customInstructions, useTemplatePrompts));
       await executeImageGeneration(id, name, refImage, optimizedPrompt);
     } catch (error: any) {
       setExpressions(prev => prev.map(exp => exp.id === id ? { ...exp, status: 'error', errorMessage: error.message || 'Failed to generate' } : exp));
@@ -283,7 +314,7 @@ export default function App() {
     try {
       // Batch optimize
       const names = pending.map(e => e.name);
-      const batchPrompts = await generateWithRetry(() => optimizeBatchPrompts(names, intensity, scope, customPrompt));
+      const batchPrompts = await generateWithRetry(() => optimizeBatchPrompts(names, intensity, scope, customPrompt, useTemplatePrompts));
 
       // Process sequentially to avoid rate limits
       for (let i = 0; i < pending.length; i++) {
@@ -502,6 +533,56 @@ export default function App() {
               <SlidersHorizontal size={16} />
               3. Generation Settings
             </h2>
+
+            {/* Budget Mode Toggle */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wallet size={16} className="text-amber-600" />
+                  <span className="text-sm font-semibold text-gray-800">Budget Mode</span>
+                </div>
+                <button
+                  onClick={() => setUseTemplatePrompts(!useTemplatePrompts)}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${useTemplatePrompts ? 'bg-green-500' : 'bg-gray-300'}`}
+                  role="switch"
+                  aria-checked={useTemplatePrompts}
+                  aria-label="Toggle AI optimization mode"
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${useTemplatePrompts ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              <div className="flex items-start gap-2">
+                <Zap size={14} className={`mt-0.5 shrink-0 ${useTemplatePrompts ? 'text-green-600' : 'text-amber-600'}`} />
+                <p className="text-xs text-gray-600">
+                  {useTemplatePrompts
+                    ? 'Using free template prompts — no AI optimization cost. Quality may vary.'
+                    : 'Using AI-optimized prompts — better quality, but uses API quota.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Usage Stats */}
+            {usage && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500 font-medium">Daily Images</span>
+                  <span className={`font-mono font-bold ${usage.dailyImages.used >= usage.dailyImages.limit ? 'text-red-600' : 'text-gray-700'}`}>
+                    {usage.dailyImages.used}/{usage.dailyImages.limit}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${usage.dailyImages.used >= usage.dailyImages.limit ? 'bg-red-500' : 'bg-indigo-500'}`}
+                    style={{ width: `${Math.min((usage.dailyImages.used / usage.dailyImages.limit) * 100, 100)}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-500 font-medium">Session Images</span>
+                  <span className="font-mono font-bold text-gray-700">{usage.sessionLimit} max</span>
+                </div>
+                <p className="text-[10px] text-gray-400">Resets {usage.resetsAt ? new Date(usage.resetsAt).toLocaleTimeString() : 'daily'}</p>
+              </div>
+            )}
 
             <div className="space-y-3">
               {/* Scope */}
