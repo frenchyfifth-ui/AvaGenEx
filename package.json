@@ -3,15 +3,20 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "vite --port=3000 --host=0.0.0.0",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "tsx server/index.ts",
+    "start": "NODE_ENV=production tsx server/index.ts",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "docker:build": "docker build -t avagenex .",
+    "docker:run": "docker run -p 3000:3000 --env-file .env avagenex"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

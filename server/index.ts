@@ -1,21 +1,70 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
+
+// --- Middleware ---
+
+// Rate limiting (simple in-memory, per-IP)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 30; // 30 requests per minute
+
+function rateLimiter(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+
+  if (!record || now > record.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    next();
+    return;
+  }
+
+  record.count++;
+  if (record.count > RATE_LIMIT_MAX) {
+    res.set('Retry-After', String(Math.ceil((record.resetAt - now) / 1000)));
+    res.status(429).json({ error: 'Too many requests. Please try again in a minute.' });
+    return;
+  }
+
+  next();
+}
 
 // Increase payload size to handle base64 images (up to 10MB)
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// CORS for local dev (Vite dev server runs on port 3000)
+// Security headers
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:3000');
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// Rate limit API only
+app.use('/api', rateLimiter);
+
+// --- CORS ---
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.length === 0 || allowedOrigins.includes(origin || '')) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS, GET');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+  }
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
     return;
@@ -23,9 +72,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// --- Gemini AI ---
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// --- Endpoints ---
+// Sanitize input to prevent prompt injection
+function sanitizeInput(input: string): string {
+  if (typeof input !== 'string') return '';
+  return input
+    .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
+    .replace(/\b(ignore all|system prompt|previous instructions|disregard|override)\b/gi, '') // Remove injection keywords
+    .trim();
+}
+
+// --- API Routes ---
+
+// Health check
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
 
 // Optimize a single expression prompt
 app.post('/api/optimize-prompt', async (req: Request, res: Response) => {
@@ -52,11 +121,12 @@ Write ONLY the final prompt. The prompt MUST start with "Edit this image to ". K
       contents: enhancerPrompt,
     });
 
-    const optimizedPrompt = textResponse.text?.trim() || `Edit this image to show the character with a ${name} expression.`;
+    const optimizedPrompt = textResponse.text?.trim() || `Edit this image to show the character with a ${sanitizeInput(name)} expression.`;
     res.json({ prompt: optimizedPrompt });
   } catch (error: any) {
     console.error('Error optimizing prompt:', error);
-    res.status(500).json({ error: error.message || 'Failed to optimize prompt' });
+    const statusCode = error?.status === 429 ? 429 : 500;
+    res.status(statusCode).json({ error: error.message || 'Failed to optimize prompt' });
   }
 });
 
@@ -105,7 +175,6 @@ For each expression, write a prompt starting with "Edit this image to ". Keep ea
       const result: Record<string, string> = {};
       if (Array.isArray(parsed)) {
         parsed.forEach((p: any) => {
-          // Sanitize output prompts
           result[p.name] = sanitizeInput(p.prompt);
         });
       }
@@ -116,7 +185,8 @@ For each expression, write a prompt starting with "Edit this image to ". Keep ea
     }
   } catch (error: any) {
     console.error('Error optimizing batch prompts:', error);
-    res.status(500).json({ error: error.message || 'Failed to optimize batch prompts' });
+    const statusCode = error?.status === 429 ? 429 : 500;
+    res.status(statusCode).json({ error: error.message || 'Failed to optimize batch prompts' });
   }
 });
 
@@ -167,27 +237,46 @@ app.post('/api/generate-image', async (req: Request, res: Response) => {
     }
   } catch (error: any) {
     console.error('Error generating image:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate image' });
+    const statusCode = error?.status === 429 ? 429 : 500;
+    res.status(statusCode).json({ error: error.message || 'Failed to generate image' });
   }
 });
 
-// Health check
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// --- Static Frontend (Production) ---
+const distPath = path.join(__dirname, 'dist');
+app.use(express.static(distPath));
+
+// SPA fallback: serve index.html for any non-API route
+app.get('*', (_req: Request, res: Response) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
-// Sanitize input to prevent prompt injection
-function sanitizeInput(input: string): string {
-  if (typeof input !== 'string') return '';
-  // Remove potentially harmful patterns while preserving legitimate text
-  return input
-    .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Remove script tags
-    .replace(/\b(ignore all|system prompt|previous instructions|disregard|override)\b/gi, '') // Remove injection keywords
-    .trim();
+// --- Error Handling ---
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// --- Start Server ---
+const server = app.listen(PORT, () => {
+  console.log(`✅ AvaGenEx server running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
+});
+
+// Graceful shutdown
+function gracefulShutdown(signal: string): void {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+  server.close(() => {
+    console.log('✅ Server closed.');
+    process.exit(0);
+  });
+  // Force exit after 10 seconds
+  setTimeout(() => {
+    console.error('⚠️  Forced shutdown after timeout.');
+    process.exit(1);
+  }, 10_000);
 }
 
-app.listen(PORT, () => {
-  console.log(`✅ Avatar Expression Generator server running on port ${PORT}`);
-  console.log(`📍 API available at http://localhost:${PORT}/api/health`);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -54,6 +54,44 @@ Generate consistent AI-powered facial expressions for your character from a sing
 
 4. **Open your browser:** Navigate to `http://localhost:3000`
 
+## How to Use
+
+### Step-by-Step Workflow
+
+**1. Upload a Reference Character**
+- Click the upload area in the left sidebar
+- Select a clear, neutral-facing image of your character (PNG, JPEG, or WebP, max 5MB)
+- The image will be automatically resized if it's too large
+
+**2. Choose Expressions**
+- 12 default expressions are pre-loaded: `happy`, `sad`, `angry`, `surprised`, `laughing`, `crying`, `thinking`, `winking`, `scared`, `confused`, `smug`, `shocked`
+- Add custom expressions by typing a name and clicking **+** (e.g. `sleepy`, `excited`)
+- Remove unwanted expressions by clicking the **×** on each tag
+
+**3. Configure Generation Settings**
+| Setting | Options | Description |
+|---------|---------|-------------|
+| **Scope** | Face Only / Pose & Props | Face Only keeps pose/body unchanged. Pose & Props allows body language and props (tears, hearts, etc.) |
+| **Intensity** | Subtle / Normal / Exaggerated | Controls how strong the expression appears |
+| **Custom Instructions** | Free text (200 chars) | Optional: add style notes like "3D render style" or "add sweat drops" |
+
+**4. Generate**
+- Click **Generate Missing Expressions** to process all pending expressions at once
+- The AI first optimizes prompts, then generates each image one-by-one
+- A 2-second delay between generations prevents rate limiting
+- Failed expressions show a **Retry** button
+
+**5. Export**
+| Button | Output |
+|--------|--------|
+| **Sprite Sheet** | Single PNG with all expressions in a grid |
+| **ZIP (N)** | ZIP file containing all individual expression PNGs |
+| **Individual Download** | Hover over any completed expression and click the download icon |
+
+**6. Regenerate**
+- Hover over any completed expression and click the **✨** icon to regenerate it with current settings
+- This is useful if you want to tweak a specific expression without re-running everything
+
 ## Available Scripts
 
 | Command | Description |
