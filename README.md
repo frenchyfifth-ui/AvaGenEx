@@ -10,10 +10,14 @@ Generate consistent AI-powered facial expressions for your character from a sing
 
 - 🎨 **Single Reference Upload** — Upload one neutral character image; AI generates all expressions
 - 🤖 **AI-Optimized Prompts** — Gemini AI intelligently crafts detailed image generation prompts
+- 💰 **Budget Mode** — Toggle to use free template prompts (zero API cost) or AI-optimized (better quality)
+- 📊 **Usage Dashboard** — Real-time daily/session usage tracking with progress bars
 - ⚙️ **Customizable Settings** — Control scope (face only / pose & props), intensity, and custom instructions
 - 📦 **Export Options** — Download as ZIP or sprite sheet
 - 🔒 **Secure Backend** — API keys never touch the browser
 - ✅ **Input Validation** — Image size limits, client-side resizing, prompt sanitization
+- 🛡️ **Rate Limiting** — Per-IP rate limiting + daily/session quotas to prevent runaway costs
+- 💾 **Response Caching** — Duplicate requests are cached (1hr) to avoid redundant API calls
 
 ## Tech Stack
 
@@ -136,8 +140,33 @@ Generate consistent AI-powered facial expressions for your character from a sing
 - **Input sanitization** — All user inputs are sanitized to prevent prompt injection
 - **Image validation** — File type and size validation before upload
 - **Client-side resize** — Images are resized before transmission to reduce costs
-- **Rate limiting** — 30 requests per minute per IP to prevent abuse
+- **Rate limiting** — 10 requests per minute per IP to prevent abuse
 - **Security headers** — XSS protection, frame denial, content-type sniffing prevention
+
+## Budget Controls
+
+The app includes built-in cost management to prevent runaway API bills:
+
+### Cost Tiers
+
+| Mode | API Calls | Cost | Quality |
+|------|-----------|------|---------|
+| **Budget (Default)** | 0 prompt calls | Free | Good — uses pre-built templates |
+| **AI Enhanced** | 1 call per batch | ~$0.01/session | Best — AI crafts optimal prompts |
+
+### Configurable Limits (via `.env`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_DAILY_IMAGE_CALLS` | 10 | Max image generations per day |
+| `MAX_DAILY_PROMPT_CALLS` | 50 | Max AI prompt optimizations per day |
+| `SESSION_MAX_IMAGES` | 5 | Max images per browser session |
+
+### Additional Cost Savers
+
+- **Response caching**: Identical requests are cached for 1 hour (no duplicate API calls)
+- **Template fallback**: If AI optimization fails, falls back to free templates automatically
+- **Batch optimization**: All expression prompts are generated in a single API call instead of one-per-expression
 
 ## Deploy to Production
 
