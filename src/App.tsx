@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Upload, Download, Trash2, Image as ImageIcon, Sparkles, UserCircle, CheckCircle2, AlertCircle, Plus, X, SlidersHorizontal, LayoutGrid, DownloadCloud } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Upload, Download, Trash2, Image as ImageIcon, Sparkles, UserCircle, CheckCircle2, AlertCircle, Plus, X, SlidersHorizontal, LayoutGrid, DownloadCloud, Wallet, Zap } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
