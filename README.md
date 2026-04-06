@@ -136,6 +136,80 @@ Generate consistent AI-powered facial expressions for your character from a sing
 - **Input sanitization** — All user inputs are sanitized to prevent prompt injection
 - **Image validation** — File type and size validation before upload
 - **Client-side resize** — Images are resized before transmission to reduce costs
+- **Rate limiting** — 30 requests per minute per IP to prevent abuse
+- **Security headers** — XSS protection, frame denial, content-type sniffing prevention
+
+## Deploy to Production
+
+### Option 1: Render (Easiest — Free Tier)
+
+1. Push your repo to GitHub
+2. Go to [render.com](https://render.com) → **New Web Service**
+3. Select your repo
+4. Set the environment variable:
+   - `GEMINI_API_KEY` = your Gemini API key
+5. Click **Deploy**
+
+Render will auto-detect the `render.yaml` config and handle everything.
+
+### Option 2: Railway (Free Trial)
+
+1. Push your repo to GitHub
+2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub**
+3. Select your repo
+4. Add environment variable:
+   - `GEMINI_API_KEY` = your Gemini API key
+5. Railway auto-detects Node.js and runs `npm run build` + `npm start`
+
+### Option 3: Fly.io (Free Allowance)
+
+1. Install [flyctl](https://fly.io/docs/hands-on/install-flyctl/)
+2. Run:
+   ```bash
+   fly launch
+   ```
+3. Set your API key:
+   ```bash
+   fly secrets set GEMINI_API_KEY=your_key_here
+   ```
+4. Deploy:
+   ```bash
+   fly deploy
+   ```
+
+### Option 4: Docker (Anywhere)
+
+```bash
+# Build
+docker build -t avagenex .
+
+# Run
+docker run -d -p 3000:3000 --env GEMINI_API_KEY=your_key_here avagenex
+```
+
+Or with Docker Compose:
+```bash
+# Set GEMINI_API_KEY in your .env file
+docker-compose up -d
+```
+
+### Option 5: Self-Hosted VPS
+
+```bash
+# On your server:
+git clone <your-repo>
+cd AvaGenEx
+npm install
+npm run build
+GEMINI_API_KEY=your_key_here npm start
+```
+
+Use PM2 to keep it running:
+```bash
+pm2 start "NODE_ENV=production npx tsx server/index.ts" --name avagenex
+pm2 save
+pm2 startup
+```
 
 ## License
 
